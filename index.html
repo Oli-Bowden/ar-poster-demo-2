@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AR Cube with Multi-Coloured Faces, Scale & Drag Rotation + Pinch Scale</title>
+
+  <!-- A-Frame library -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+  <!-- MindAR for image tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; }
+    .btn {
+      position: fixed;
+      bottom: 70px;
+      width: 60px;
+      height: 60px;
+      background: rgba(0, 0, 255, 0.9);
+      color: white;
+      font-size: 40px;
+      font-weight: bold;
+      text-align: center;
+      line-height: 60px;
+      border-radius: 12px;
+      user-select: none;
+      z-index: 1000;
+      font-family: Arial, sans-serif;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+    #scaleUp { right: 90px; }
+    #scaleDown { right: 20px; }
+
+    #scaleDisplay {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      z-index: 1000;
+      user-select: none;
+      width: max-content;
+    }
+  </style>
+</head>
+<body>
+
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: true"
+  >
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0" id="cubeContainer"></a-entity>
+
+  </a-scene>
+
+  <div id="scaleUp" class="btn">＋</div>
+  <div id="scaleDown" class="btn">－</div>
+  <div id="scaleDisplay">Scale: 1.00x</div>
+
+  <script>
+    AFRAME.registerComponent('multi-colored-cube', {
+      init: function () {
+        const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const faceColors = [
+          new THREE.Color('red'),    // right
+          new THREE.Color('green'),  // left
+          new THREE.Color('blue'),   // top
+          new THREE.Color('yellow'), // bottom
+          new THREE.Color('purple'), // front
+          new THREE.Color('orange')  // back
+        ];
+
+        const colors = [];
+        for (let i = 0; i < 6; i++) {
+          const color = faceColors[i];
+          for (let j = 0; j < 6; j++) {
+            colors.push(color.r, color.g, color.b);
+          }
+        }
+
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+        const mesh = new THREE.Mesh(geometry, material);
+        this.el.setObject3D('mesh', mesh);
+      }
+    });
+
+    window.onload = () => {
+      const container = document.getElementById('cubeContainer');
+
+      const cubeEntity = document.createElement('a-entity');
+      cubeEntity.setAttribute('multi-colored-cube', '');
+      container.appendChild(cubeEntity);
+
+      let isDragging = false;
+      let previousX = 0;
+      let previousY = 0;
+      let currentScale = 1;
+      let initialPinchDistance = null;
+
+      const scaleDisplay = document.getElementById('scaleDisplay');
+      const scaleUpBtn = document.getElementById('scaleUp');
+      const scaleDownBtn = document.getElementById('scaleDown');
+
+      function updateScaleDisplay() {
+        scaleDisplay.textContent = `Scale: ${currentScale.toFixed(2)}x`;
+      }
+
+      // Buttons to scale cube
+      scaleUpBtn.addEventListener('click', () => {
+        currentScale = Math.min(currentScale + 0.1, 3);
+        cubeEntity.object3D.scale.set(currentScale, currentScale, currentScale);
+        updateScaleDisplay();
+      });
+
+      scaleDownBtn.addEventListener('click', () => {
+        currentScale = Math.max(currentScale - 0.1, 0.2);
+        cubeEntity.object3D.scale.set(currentScale, currentScale, currentScale);
+        updateScaleDisplay();
+      });
+
+      // Rotation handlers for drag
+      function onPointerDown(event) {
+        if (event.touches && event.touches.length === 1) {
+          isDragging = true;
+          previousX = event.touches[0].clientX;
+          previousY = event.touches[0].clientY;
+          event.preventDefault();
+        }
+      }
+
+      function onPointerMove(event) {
+        if (!isDragging || !event.touches || event.touches.length !== 1) return;
+
+        const currentX = event.touches[0].clientX;
+        const currentY = event.touches[0].clientY;
+
+        const deltaX = currentX - previousX;
+        const deltaY = currentY - previousY;
+
+        previousX = currentX;
+        previousY = currentY;
+
+        cubeEntity.object3D.rotation.y += deltaX * 0.01;
+        cubeEntity.object3D.rotation.x += deltaY * 0.01;
+
+        // Clamp vertical rotation between -90 and 90 degrees
+        const maxX = Math.PI / 2;
+        const minX = -Math.PI / 2;
+        if (cubeEntity.object3D.rotation.x > maxX) cubeEntity.object3D.rotation.x = maxX;
+        if (cubeEntity.object3D.rotation.x < minX) cubeEntity.object3D.rotation.x = minX;
+
+        event.preventDefault();
+      }
+
+      function onPointerUp(event) {
+        isDragging = false;
+        event.preventDefault();
+      }
+
+      // Pinch scaling helpers
+      function getDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      function onTouchStart(event) {
+        if (event.touches.length === 2) {
+          initialPinchDistance = getDistance(event.touches);
+          event.preventDefault();
+        } else if (event.touches.length === 1) {
+          onPointerDown(event);
+        }
+      }
+
+      function onTouchMove(event) {
+        if (event.touches.length === 2 && initialPinchDistance) {
+          const currentDistance = getDistance(event.touches);
+          const scaleChange = currentDistance / initialPinchDistance;
+          let newScale = currentScale * scaleChange;
+
+          newScale = Math.min(Math.max(newScale, 0.2), 3);
+
+          cubeEntity.object3D.scale.set(newScale, newScale, newScale);
+          scaleDisplay.textContent = `Scale: ${newScale.toFixed(2)}x`;
+
+          event.preventDefault();
+        } else if (event.touches.length === 1) {
+          onPointerMove(event);
+        }
+      }
+
+      function onTouchEnd(event) {
+        if (event.touches.length < 2) {
+          currentScale = cubeEntity.object3D.scale.x;
+          initialPinchDistance = null;
+        }
+        if (event.touches.length === 0) {
+          onPointerUp(event);
+        }
+      }
+
+      // Attach touch events to the entire scene for better responsiveness
+      const sceneEl = document.querySelector('a-scene');
+
+      sceneEl.addEventListener('touchstart', onTouchStart);
+      sceneEl.addEventListener('touchmove', onTouchMove);
+      sceneEl.addEventListener('touchend', onTouchEnd);
+      sceneEl.addEventListener('touchcancel', onTouchEnd);
+
+      // Mouse events for desktop testing
+      sceneEl.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        previousX = e.clientX;
+        previousY = e.clientY;
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.clientX - previousX;
+        const deltaY = e.clientY - previousY;
+        previousX = e.clientX;
+        previousY = e.clientY;
+
+        cubeEntity.object3D.rotation.y += deltaX * 0.01;
+        cubeEntity.object3D.rotation.x += deltaY * 0.01;
+
+        const maxX = Math.PI / 2;
+        const minX = -Math.PI / 2;
+        if (cubeEntity.object3D.rotation.x > maxX) cubeEntity.object3D.rotation.x = maxX;
+        if (cubeEntity.object3D.rotation.x < minX) cubeEntity.object3D.rotation.x = minX;
+
+        e.preventDefault();
+      });
+      window.addEventListener('mouseup', (e) => {
+        isDragging = false;
+        e.preventDefault();
+      });
+
+      updateScaleDisplay();
+    };
+  </script>
+
+</body>
+</html>
